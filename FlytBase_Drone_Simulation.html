@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlytBase Multi-Drone Coordination Simulation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0e1a; color: #e0e6f0; font-family: 'Segoe UI', sans-serif; min-height: 100vh; }
+  
+  header {
+    background: linear-gradient(135deg, #0d1b2a 0%, #1a2744 100%);
+    border-bottom: 2px solid #2563eb;
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 1.4rem; font-weight: 700; color: #60a5fa; letter-spacing: 0.5px; }
+  header span { font-size: 0.8rem; color: #94a3b8; }
+  
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    height: calc(100vh - 60px);
+  }
+  
+  .sim-panel {
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+    overflow-y: auto;
+  }
+  
+  .sidebar {
+    background: #0d1421;
+    border-left: 1px solid #1e3a5f;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  
+  canvas {
+    background: #0f1929;
+    border: 1px solid #1e3a5f;
+    border-radius: 8px;
+    display: block;
+  }
+  
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+  
+  button {
+    padding: 8px 18px; border: none; border-radius: 6px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: all 0.15s;
+  }
+  button.primary { background: #2563eb; color: white; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { background: #dc2626; color: white; }
+  button.danger:hover { background: #b91c1c; }
+  button.success { background: #16a34a; color: white; }
+  button.success:hover { background: #15803d; }
+  button.secondary { background: #334155; color: #e0e6f0; }
+  button.secondary:hover { background: #475569; }
+  
+  .speed-control { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .speed-control label { font-size: 0.8rem; color: #94a3b8; }
+  input[type=range] { width: 100px; }
+  
+  .section-title {
+    font-size: 0.75rem; font-weight: 700; color: #60a5fa;
+    text-transform: uppercase; letter-spacing: 1px;
+    border-bottom: 1px solid #1e3a5f; padding-bottom: 6px;
+  }
+  
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .stat-box {
+    background: #111827; border: 1px solid #1e3a5f; border-radius: 6px;
+    padding: 10px; text-align: center;
+  }
+  .stat-box .val { font-size: 1.6rem; font-weight: 700; color: #60a5fa; }
+  .stat-box .lbl { font-size: 0.65rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+  
+  .drone-list { display: flex; flex-direction: column; gap: 6px; }
+  .drone-item {
+    background: #111827; border: 1px solid #1e3a5f; border-radius: 6px;
+    padding: 8px 10px; font-size: 0.78rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .drone-item .drone-id { font-weight: 700; }
+  .badge {
+    padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600;
+  }
+  .badge-docked { background: #1e3a5f; color: #60a5fa; }
+  .badge-ascending { background: #713f12; color: #fbbf24; }
+  .badge-transit { background: #14532d; color: #4ade80; }
+  .badge-returning { background: #1e3a5f; color: #a78bfa; }
+  .badge-descending { background: #7f1d1d; color: #f87171; }
+  .badge-holding { background: #7c2d12; color: #fb923c; }
+  .badge-emergency { background: #dc2626; color: white; animation: blink 0.5s infinite; }
+  
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  
+  .log-container {
+    background: #070c14; border: 1px solid #1e3a5f; border-radius: 6px;
+    font-family: 'Courier New', monospace; font-size: 0.72rem;
+    height: 180px; overflow-y: auto; padding: 8px;
+  }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid #0f1929; }
+  .log-entry .ts { color: #475569; }
+  .log-entry.info .msg { color: #94a3b8; }
+  .log-entry.warn .msg { color: #fbbf24; }
+  .log-entry.error .msg { color: #f87171; }
+  .log-entry.success .msg { color: #4ade80; }
+  .log-entry.atc .msg { color: #60a5fa; }
+  
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  
+  .altitude-chart {
+    background: #070c14; border: 1px solid #1e3a5f; border-radius: 6px;
+    height: 80px; position: relative; overflow: hidden;
+  }
+  
+  .rule-highlight {
+    background: #111827; border-left: 3px solid #2563eb;
+    padding: 8px 10px; border-radius: 0 6px 6px 0;
+    font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;
+  }
+  .rule-highlight strong { color: #60a5fa; }
+  
+  .conflict-alert {
+    background: #450a0a; border: 1px solid #dc2626; border-radius: 6px;
+    padding: 8px 10px; font-size: 0.75rem; color: #fca5a5;
+    display: none;
+  }
+  .conflict-alert.active { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛸 FlytBase Multi-Drone Coordination System — Live Simulation</h1>
+  <span>Altitude-Layer SOP v1.0 | 4×4 Grid | 16 Docks</span>
+</header>
+
+<div class="main-layout">
+  <div class="sim-panel">
+    
+    <div class="controls">
+      <button class="success" id="btnStart">▶ Start Simulation</button>
+      <button class="danger" id="btnStop">⏹ Stop</button>
+      <button class="secondary" id="btnReset">↺ Reset</button>
+      <button class="primary" id="btnLaunch">🚁 Launch Random Drone</button>
+      <button class="secondary" id="btnEmergency">⚠ Trigger Emergency</button>
+      <div class="speed-control">
+        <label>Speed:</label>
+        <input type="range" id="speedSlider" min="0.5" max="5" step="0.5" value="1.5">
+        <label id="speedLabel">1.5×</label>
+      </div>
+    </div>
+    
+    <canvas id="simCanvas" width="720" height="520"></canvas>
+    
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#1e40af"></div> Docked</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div> Ascending (Layer A: 0-15m)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4ade80"></div> Transit (Layer B: 30m+)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> Returning</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div> Descending</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div> Holding Pattern</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Emergency</div>
+    </div>
+    
+    <div class="conflict-alert" id="conflictAlert">
+      ⚠️ CONFLICT DETECTED — ATC Protocol Activated: Drone entering hold pattern
+    </div>
+
+    <div class="section-title">Active SOP Rules Being Enforced</div>
+    <div id="activeRules">
+      <div class="rule-highlight"><strong>R-01:</strong> Vertical separation enforced — Ascent locked to Layer A (10-15m), Transit at Layer B (30m)</div>
+      <div class="rule-highlight"><strong>R-02:</strong> No two drones may simultaneously occupy the same 50m² grid cell at the same altitude layer</div>
+      <div class="rule-highlight"><strong>R-03:</strong> Priority: Emergency > Return/Land > Transit > Takeoff</div>
+    </div>
+    
+  </div>
+  
+  <div class="sidebar">
+    
+    <div class="section-title">ATC Statistics</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="val" id="statFlying">0</div><div class="lbl">Flying Now</div></div>
+      <div class="stat-box"><div class="val" id="statMissions">0</div><div class="lbl">Completed</div></div>
+      <div class="stat-box"><div class="val" id="statConflicts">0</div><div class="lbl">Conflicts Avoided</div></div>
+      <div class="stat-box"><div class="val" id="statHolds">0</div><div class="lbl">Hold Events</div></div>
+    </div>
+    
+    <div class="section-title">Drone Fleet Status</div>
+    <div class="drone-list" id="droneList"></div>
+    
+    <div class="section-title">ATC Event Log</div>
+    <div class="log-container" id="logContainer"></div>
+    
+    <div class="section-title">Altitude Zones</div>
+    <div style="background:#070c14;border:1px solid #1e3a5f;border-radius:6px;padding:10px;font-size:0.72rem;">
+      <div style="display:flex;justify-content:space-between;color:#f87171;border-bottom:1px solid #1e3a5f;padding:3px 0;">
+        <span>⬆ Layer C: Emergency / Return</span><span>45m</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:#4ade80;border-bottom:1px solid #1e3a5f;padding:3px 0;">
+        <span>⬆ Layer B: Horizontal Transit</span><span>30m</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:#60a5fa;border-bottom:1px solid #1e3a5f;padding:3px 0;">
+        <span>⬆ Layer A-high: Ascent/Descent</span><span>15m</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;color:#fbbf24;padding:3px 0;">
+        <span>⬆ Layer A-low: Takeoff/Land</span><span>0–10m</span>
+      </div>
+    </div>
+    
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+
+// ── Grid Config ──────────────────────────────────────────────────────────────
+const GRID = 4;
+const DOCK_SPACING = 80;
+const GRID_OFFSET_X = 60;
+const GRID_OFFSET_Y = 60;
+const DOCK_SIZE = 28;
+
+// Dock positions on canvas
+function dockPos(idx) { // 0-based index
+  const row = Math.floor(idx / GRID);
+  const col = idx % GRID;
+  return {
+    x: GRID_OFFSET_X + col * DOCK_SPACING,
+    y: GRID_OFFSET_Y + row * DOCK_SPACING,
+    id: idx + 1
+  };
+}
+
+const docks = Array.from({length: 16}, (_, i) => dockPos(i));
+
+// ── Target zone positions (outside grid) ─────────────────────────────────────
+const TARGET_ZONES = [
+  {x: 600, y: 100, label: 'Zone N'},
+  {x: 650, y: 300, label: 'Zone E'},
+  {x: 600, y: 490, label: 'Zone SE'},
+  {x: 60, y: 490, label: 'Zone SW'},
+  {x: 10, y: 300, label: 'Zone W'},
+  {x: 60, y: 60, label: 'Zone NW'},
+];
+
+// ── Drone States ──────────────────────────────────────────────────────────────
+const STATES = {
+  DOCKED: 'docked',
+  ASCENDING: 'ascending',
+  TRANSIT_OUT: 'transit',
+  AT_TARGET: 'at_target',
+  RETURNING: 'returning',
+  DESCENDING: 'descending',
+  HOLDING: 'holding',
+  EMERGENCY: 'emergency'
+};
+
+const STATE_COLORS = {
+  docked: '#1e40af',
+  ascending: '#fbbf24',
+  transit: '#4ade80',
+  at_target: '#06b6d4',
+  returning: '#a78bfa',
+  descending: '#f87171',
+  holding: '#fb923c',
+  emergency: '#ef4444'
+};
+
+// ── Simulation State ──────────────────────────────────────────────────────────
+let drones = [];
+let simTime = 0;
+let running = false;
+let animFrame = null;
+let lastTime = null;
+let speedMult = 1.5;
+let stats = { flying: 0, completed: 0, conflicts: 0, holds: 0 };
+let emergencyMode = false;
+
+// Layer altitudes (visual representation: higher alt = smaller y offset in canvas)
+const LAYER_A_LOW = 0;    // 0-10m
+const LAYER_A_HIGH = 15;  // 10-15m
+const LAYER_B = 30;       // transit
+const LAYER_C = 45;       // emergency return
+
+function createDrone(dockIdx) {
+  const dp = docks[dockIdx];
+  const targetZone = TARGET_ZONES[Math.floor(Math.random() * TARGET_ZONES.length)];
+  return {
+    id: dockIdx + 1,
+    dockIdx,
+    x: dp.x, y: dp.y,
+    homeX: dp.x, homeY: dp.y,
+    targetX: targetZone.x, targetY: targetZone.y,
+    targetLabel: targetZone.label,
+    state: STATES.DOCKED,
+    altitude: 0,   // logical altitude meters
+    visualAlt: 0,  // for rendering offset
+    stateTimer: 0,
+    holdTimer: 0,
+    trail: [],
+    missionId: Math.floor(Math.random() * 9000) + 1000,
+    color: `hsl(${(dockIdx * 23 + 180) % 360}, 70%, 60%)`,
+    speed: 60 + Math.random() * 30, // px/sec
+    isEmergency: false
+  };
+}
+
+function initDrones() {
+  drones = Array.from({length: 16}, (_, i) => createDrone(i));
+}
+
+// ── ATC Conflict Detection ────────────────────────────────────────────────────
+function checkConflict(drone, newX, newY, newAlt) {
+  for (let other of drones) {
+    if (other.id === drone.id) continue;
+    if (other.state === STATES.DOCKED || other.state === STATES.AT_TARGET) continue;
+    const dist = Math.hypot(other.x - newX, other.y - newY);
+    const altDiff = Math.abs(other.altitude - newAlt);
+    if (dist < 35 && altDiff < 8) return other;
+  }
+  return null;
+}
+
+function countFlying() {
+  return drones.filter(d => d.state !== STATES.DOCKED).length;
+}
+
+// ── Log System ────────────────────────────────────────────────────────────────
+const MAX_LOG = 60;
+const logEntries = [];
+
+function addLog(type, msg) {
+  const ts = formatTime(simTime);
+  logEntries.unshift({ type, msg, ts });
+  if (logEntries.length > MAX_LOG) logEntries.pop();
+  renderLog();
+}
+
+function formatTime(t) {
+  const m = Math.floor(t / 60).toString().padStart(2, '0');
+  const s = Math.floor(t % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function renderLog() {
+  const container = document.getElementById('logContainer');
+  container.innerHTML = logEntries.slice(0, 20).map(e =>
+    `<div class="log-entry ${e.type}"><span class="ts">[${e.ts}] </span><span class="msg">${e.msg}</span></div>`
+  ).join('');
+}
+
+// ── Drone State Machine ───────────────────────────────────────────────────────
+function updateDrone(drone, dt) {
+  const sp = drone.speed * speedMult;
+  
+  if (drone.state === STATES.DOCKED) return;
+  
+  drone.stateTimer += dt;
+  
+  // Trail
+  if (drone.state !== STATES.DOCKED) {
+    drone.trail.push({x: drone.x, y: drone.y, age: 0});
+    if (drone.trail.length > 25) drone.trail.shift();
+  }
+  drone.trail.forEach(t => t.age += dt);
+  
+  switch (drone.state) {
+    
+    case STATES.ASCENDING: {
+      // Ascend vertically over dock to Layer A-high (15m)
+      drone.altitude = Math.min(drone.altitude + 20 * dt * speedMult, 15);
+      drone.visualAlt = drone.altitude;
+      if (drone.altitude >= 15) {
+        // Check if Layer B is clear before transitioning
+        const conflict = checkConflict(drone, drone.x, drone.y, LAYER_B);
+        if (conflict) {
+          drone.state = STATES.HOLDING;
+          drone.holdTimer = 0;
+          stats.holds++;
+          stats.conflicts++;
+          addLog('warn', `ATC: D${drone.id} HOLD — Layer B conflict w/ D${conflict.id}`);
+          document.getElementById('conflictAlert').classList.add('active');
+          setTimeout(() => document.getElementById('conflictAlert').classList.remove('active'), 3000);
+        } else {
+          drone.altitude = LAYER_B;
+          drone.visualAlt = LAYER_B;
+          drone.state = STATES.TRANSIT_OUT;
+          addLog('atc', `D${drone.id} cleared to Layer B transit → ${drone.targetLabel}`);
+        }
+      }
+      break;
+    }
+    
+    case STATES.HOLDING: {
+      // Orbit in place at Layer A-high for 2 seconds then retry
+      drone.holdTimer += dt;
+      const angle = drone.holdTimer * 2;
+      drone.x = drone.homeX + Math.cos(angle) * 15;
+      drone.y = drone.homeY + Math.sin(angle) * 15;
+      if (drone.holdTimer > 2.5) {
+        const conflict = checkConflict(drone, drone.homeX, drone.homeY, LAYER_B);
+        if (!conflict) {
+          drone.x = drone.homeX;
+          drone.y = drone.homeY;
+          drone.altitude = LAYER_B;
+          drone.visualAlt = LAYER_B;
+          drone.state = STATES.TRANSIT_OUT;
+          addLog('success', `D${drone.id} hold released — proceeding to Layer B`);
+        } else {
+          drone.holdTimer = 0;
+        }
+      }
+      break;
+    }
+    
+    case STATES.TRANSIT_OUT: {
+      // Move horizontally at Layer B to target
+      const dx = drone.targetX - drone.x;
+      const dy = drone.targetY - drone.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 5) {
+        drone.x = drone.targetX;
+        drone.y = drone.targetY;
+        drone.state = STATES.AT_TARGET;
+        drone.stateTimer = 0;
+        addLog('success', `D${drone.id} arrived at ${drone.targetLabel} — mission payload delivered`);
+      } else {
+        const nx = dx / dist, ny = dy / dist;
+        drone.x += nx * sp * dt;
+        drone.y += ny * sp * dt;
+        // Check conflicts en route
+        const conflict = checkConflict(drone, drone.x, drone.y, LAYER_B);
+        if (conflict && conflict.state === STATES.TRANSIT_OUT) {
+          // SOP: lower-priority drone (higher dock number) yields
+          if (drone.id > conflict.id) {
+            drone.state = STATES.HOLDING;
+            drone.holdTimer = 0;
+            drone.homeX = drone.x; drone.homeY = drone.y;
+            stats.holds++; stats.conflicts++;
+            addLog('warn', `ATC: D${drone.id} yields to D${conflict.id} — hold initiated`);
+          }
+        }
+      }
+      break;
+    }
+    
+    case STATES.AT_TARGET: {
+      if (drone.stateTimer > 1.5 / speedMult) {
+        drone.state = STATES.RETURNING;
+        addLog('info', `D${drone.id} departing ${drone.targetLabel} — RTB initiated`);
+      }
+      break;
+    }
+    
+    case STATES.RETURNING: {
+      // Fly back at Layer B (or Layer C if emergency)
+      const returnAlt = drone.isEmergency ? LAYER_C : LAYER_B;
+      drone.altitude = returnAlt;
+      const dx = drone.homeX - drone.x;
+      const dy = drone.homeY - drone.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 5) {
+        drone.x = drone.homeX;
+        drone.y = drone.homeY;
+        drone.altitude = LAYER_A_HIGH;
+        drone.state = STATES.DESCENDING;
+        addLog('info', `D${drone.id} over home dock — beginning descent`);
+      } else {
+        const nx = dx / dist, ny = dy / dist;
+        drone.x += nx * sp * dt;
+        drone.y += ny * sp * dt;
+      }
+      break;
+    }
+    
+    case STATES.DESCENDING: {
+      drone.altitude = Math.max(drone.altitude - 15 * dt * speedMult, 0);
+      drone.visualAlt = drone.altitude;
+      if (drone.altitude <= 0) {
+        drone.altitude = 0;
+        drone.state = STATES.DOCKED;
+        drone.x = drone.homeX;
+        drone.y = drone.homeY;
+        drone.trail = [];
+        drone.isEmergency = false;
+        stats.completed++;
+        addLog('success', `D${drone.id} docked ✓ — Mission ${drone.missionId} complete`);
+        updateStats();
+      }
+      break;
+    }
+    
+    case STATES.EMERGENCY: {
+      // Immediately ascend to Layer C and return
+      drone.altitude = Math.min(drone.altitude + 40 * dt * speedMult, LAYER_C);
+      if (drone.altitude >= LAYER_C) {
+        drone.state = STATES.RETURNING;
+        drone.isEmergency = true;
+        addLog('error', `D${drone.id} EMERGENCY RTB on Layer C — all drones yielding`);
+        // Force nearby conflicting drones to hold
+        for (let other of drones) {
+          if (other.id !== drone.id && other.state === STATES.TRANSIT_OUT) {
+            other.state = STATES.HOLDING;
+            other.holdTimer = 0;
+            other.homeX = other.x; other.homeY = other.y;
+            addLog('atc', `ATC: D${other.id} holding for emergency D${drone.id}`);
+          }
+        }
+      }
+      break;
+    }
+  }
+}
+
+// ── Launch a Drone ────────────────────────────────────────────────────────────
+function launchDrone(dockIdx) {
+  const drone = drones[dockIdx];
+  if (drone.state !== STATES.DOCKED) return false;
+  drone.state = STATES.ASCENDING;
+  drone.altitude = 0;
+  drone.missionId = Math.floor(Math.random() * 9000) + 1000;
+  drone.targetX = TARGET_ZONES[Math.floor(Math.random() * TARGET_ZONES.length)].x;
+  drone.targetY = TARGET_ZONES[Math.floor(Math.random() * TARGET_ZONES.length)].y;
+  drone.homeX = drone.x; drone.homeY = drone.y;
+  addLog('info', `D${drone.id} launch clearance — Mission ${drone.missionId} assigned`);
+  return true;
+}
+
+function launchRandom() {
+  const available = drones.filter(d => d.state === STATES.DOCKED);
+  if (available.length === 0) { addLog('warn', 'All drones currently airborne'); return; }
+  const drone = available[Math.floor(Math.random() * available.length)];
+  launchDrone(drone.dockIdx);
+}
+
+function triggerEmergency() {
+  const airborne = drones.filter(d => d.state === STATES.TRANSIT_OUT || d.state === STATES.AT_TARGET || d.state === STATES.RETURNING);
+  if (airborne.length === 0) { addLog('warn', 'No airborne drones for emergency test'); return; }
+  const drone = airborne[Math.floor(Math.random() * airborne.length)];
+  drone.state = STATES.EMERGENCY;
+  addLog('error', `⚠ EMERGENCY declared on D${drone.id} — ATC activating Layer C protocol`);
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+function drawGrid() {
+  // Background grid
+  ctx.strokeStyle = '#0f2040';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 720; i += 40) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 520); ctx.stroke();
+  }
+  for (let j = 0; j <= 520; j += 40) {
+    ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(720, j); ctx.stroke();
+  }
+  
+  // Grid boundary
+  const x0 = GRID_OFFSET_X - 30, y0 = GRID_OFFSET_Y - 30;
+  const w = 3 * DOCK_SPACING + 60, h = 3 * DOCK_SPACING + 60;
+  ctx.strokeStyle = '#1e3a5f';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 3]);
+  ctx.strokeRect(x0, y0, w, h);
+  ctx.setLineDash([]);
+  
+  ctx.fillStyle = '#1e3a5f33';
+  ctx.fillRect(x0, y0, w, h);
+  
+  ctx.fillStyle = '#1e3a5f';
+  ctx.font = '9px monospace';
+  ctx.fillText('DOCK GRID', x0 + 5, y0 + 12);
+}
+
+function drawDocks() {
+  docks.forEach((dp, i) => {
+    const drone = drones[i];
+    const docked = drone.state === STATES.DOCKED;
+    
+    // Dock pad
+    ctx.fillStyle = docked ? '#1e3a5f' : '#0f2040';
+    ctx.strokeStyle = docked ? '#3b82f6' : '#334155';
+    ctx.lineWidth = 1;
+    const s = DOCK_SIZE / 2;
+    ctx.beginPath();
+    ctx.roundRect(dp.x - s, dp.y - s, DOCK_SIZE, DOCK_SIZE, 3);
+    ctx.fill(); ctx.stroke();
+    
+    // H marker
+    ctx.fillStyle = docked ? '#60a5fa' : '#334155';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('H', dp.x, dp.y);
+    
+    // Dock label
+    ctx.fillStyle = '#475569';
+    ctx.font = '8px monospace';
+    ctx.fillText(`D${dp.id}`, dp.x, dp.y + 20);
+  });
+}
+
+function drawTargetZones() {
+  TARGET_ZONES.forEach(tz => {
+    ctx.strokeStyle = '#065f46';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(tz.x, tz.y, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#064e3b44';
+    ctx.fill();
+    ctx.fillStyle = '#10b981';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(tz.label, tz.x, tz.y);
+  });
+}
+
+function drawDrones() {
+  drones.forEach(drone => {
+    if (drone.state === STATES.DOCKED) return;
+    
+    // Trail
+    drone.trail.forEach((pt, i) => {
+      const alpha = (1 - pt.age / 3) * 0.3;
+      if (alpha <= 0) return;
+      ctx.fillStyle = drone.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    // Altitude visual offset (higher = slightly smaller, moved up)
+    const altScale = 1 - (drone.visualAlt / LAYER_C) * 0.15;
+    const altOffsetY = -(drone.visualAlt / LAYER_C) * 12;
+    
+    const rx = drone.x, ry = drone.y + altOffsetY;
+    const r = 9 * altScale;
+    
+    // Shadow on ground
+    ctx.fillStyle = '#00000033';
+    ctx.beginPath();
+    ctx.ellipse(drone.x, drone.y + 2, r * 0.8, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Drone body
+    const col = STATE_COLORS[drone.state] || '#fff';
+    ctx.fillStyle = col;
+    ctx.strokeStyle = '#fff3';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.arc(rx, ry, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    
+    // Emergency pulse
+    if (drone.state === STATES.EMERGENCY) {
+      ctx.strokeStyle = '#ef444466';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(rx, ry, r + 8 + Math.sin(simTime * 10) * 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    
+    // Holding orbit indicator
+    if (drone.state === STATES.HOLDING) {
+      ctx.strokeStyle = '#fb923c44';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(drone.homeX, drone.homeY, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.ceil(7 * altScale)}px Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`D${drone.id}`, rx, ry);
+    
+    // Altitude badge
+    ctx.fillStyle = '#00000066';
+    ctx.fillRect(rx - 14, ry + r + 2, 28, 10);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '7px monospace';
+    ctx.fillText(`${Math.round(drone.altitude)}m`, rx, ry + r + 7);
+  });
+}
+
+function drawSimTime() {
+  ctx.fillStyle = '#1e3a5f';
+  ctx.fillRect(630, 495, 85, 20);
+  ctx.fillStyle = '#60a5fa';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`T+${formatTime(simTime)}`, 712, 509);
+}
+
+function render() {
+  ctx.clearRect(0, 0, 720, 520);
+  drawGrid();
+  drawTargetZones();
+  drawDocks();
+  drawDrones();
+  drawSimTime();
+}
+
+// ── Sidebar Updates ───────────────────────────────────────────────────────────
+function updateStats() {
+  stats.flying = countFlying();
+  document.getElementById('statFlying').textContent = stats.flying;
+  document.getElementById('statMissions').textContent = stats.completed;
+  document.getElementById('statConflicts').textContent = stats.conflicts;
+  document.getElementById('statHolds').textContent = stats.holds;
+}
+
+function updateDroneList() {
+  const list = document.getElementById('droneList');
+  list.innerHTML = drones.map(d => {
+    const badgeClass = `badge-${d.state}`;
+    const stateLabel = d.state.charAt(0).toUpperCase() + d.state.slice(1);
+    const altInfo = d.state !== STATES.DOCKED ? ` @ ${Math.round(d.altitude)}m` : '';
+    return `<div class="drone-item">
+      <span class="drone-id">D${d.id}</span>
+      <span style="font-size:0.72rem;color:#64748b">${altInfo}</span>
+      <span class="badge ${badgeClass}">${stateLabel}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Auto-launch scheduler ─────────────────────────────────────────────────────
+let nextAutoLaunch = 3;
+
+function scheduleAutoLaunch(dt) {
+  nextAutoLaunch -= dt * speedMult;
+  if (nextAutoLaunch <= 0) {
+    launchRandom();
+    nextAutoLaunch = 2 + Math.random() * 3;
+  }
+}
+
+// ── Main Loop ─────────────────────────────────────────────────────────────────
+function gameLoop(timestamp) {
+  if (!running) return;
+  if (!lastTime) lastTime = timestamp;
+  let dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  simTime += dt * speedMult;
+  
+  scheduleAutoLaunch(dt);
+  drones.forEach(d => updateDrone(d, dt));
+  updateStats();
+  updateDroneList();
+  render();
+  
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+document.getElementById('btnStart').addEventListener('click', () => {
+  if (running) return;
+  running = true; lastTime = null;
+  addLog('atc', '=== SIMULATION STARTED === ATC online');
+  animFrame = requestAnimationFrame(gameLoop);
+});
+
+document.getElementById('btnStop').addEventListener('click', () => {
+  running = false;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  addLog('info', 'Simulation paused');
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  running = false;
+  if (animFrame) cancelAnimationFrame(animFrame);
+  simTime = 0; lastTime = null;
+  stats = { flying: 0, completed: 0, conflicts: 0, holds: 0 };
+  logEntries.length = 0;
+  nextAutoLaunch = 3;
+  initDrones();
+  updateStats(); updateDroneList(); renderLog(); render();
+  addLog('atc', '=== SYSTEM RESET === All drones docked');
+});
+
+document.getElementById('btnLaunch').addEventListener('click', launchRandom);
+document.getElementById('btnEmergency').addEventListener('click', triggerEmergency);
+
+document.getElementById('speedSlider').addEventListener('input', function() {
+  speedMult = parseFloat(this.value);
+  document.getElementById('speedLabel').textContent = speedMult + '×';
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initDrones();
+render();
+updateDroneList();
+addLog('atc', 'FlytBase ATC System initialized — 16 docks ready');
+addLog('info', 'Press ▶ Start to begin automated simulation');
+</script>
+</body>
+</html>
